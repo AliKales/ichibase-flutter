@@ -36,10 +36,9 @@ void main() {
     c.dispose();
   });
 
-  test('mongo + storage + realtime accessors are wired', () {
+  test('mongo + realtime accessors are wired', () {
     final c = createClient('https://x.ichibase.net', 'ich_pub_abc');
     expect(c.mongo, isA<Mongo>());
-    expect(c.storage.from('avatars'), isA<StorageBucket>());
     expect(c.realtime, isA<RealtimeClient>());
     c.dispose();
   });

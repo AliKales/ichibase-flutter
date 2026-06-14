@@ -7,7 +7,6 @@ import 'mongo.dart';
 import 'postgrest.dart';
 import 'realtime.dart';
 import 'session_storage.dart';
-import 'storage.dart';
 
 /// The single client a Flutter/Dart app uses. **Anon key only.**
 ///
@@ -20,8 +19,8 @@ import 'storage.dart';
 /// await ichi.auth.login(email: email, password: password);
 /// ```
 ///
-/// One config + one session shared across Postgres, Auth, Storage, Mongo, and
-/// Realtime. After login, data calls use the user's access token so your RLS /
+/// One config + one session shared across Postgres, Auth, Mongo, and Realtime.
+/// After login, data calls use the user's access token so your RLS /
 /// policies / realtime rules apply per-user; logged out, they use the
 /// publishable anon key.
 class Ichibase {
@@ -95,9 +94,10 @@ class Ichibase {
       Postgrest(url, _bearer(), _http)
           .rpc(fn, args: args, schema: schema, count: count);
 
-  // ── Storage / Mongo / Realtime ─────────────────────────────────────
-  Storage get storage => Storage(url, _bearer(), _http);
-
+  // ── Mongo / Realtime ───────────────────────────────────────────────
+  // NOTE: file Storage is intentionally NOT on the client. The project owner
+  // mints read tokens / signs upload URLs server-side (Edge Function + service
+  // key) and hands them to users. Public files: cdn.ichibase.net/<project>/public/...
   Mongo get mongo {
     final m = Mongo(url, _anonKey, _http);
     final s = _session;

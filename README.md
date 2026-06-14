@@ -93,14 +93,11 @@ final docs = await ichi.mongo.collection('orders').find({'total': {'\$gt': 10}})
 
 ## Storage
 
-```dart
-// Signed read URL for a private file
-final signed = await ichi.storage.from('invoices').getUrl('/2026/march.pdf', ttlSeconds: 300);
-
-// Upload
-await ichi.storage.from('avatars').upload('/me.png', bytes, contentType: 'image/png');
-// Public files: https://cdn.ichibase.net/<project>/public/<path>
-```
+Storage is **not** on the client. Read/upload tokens are minted server-side by
+the project owner (an Edge Function using the service key) and handed to your
+app — so private files stay the owner's responsibility. Public files are read
+directly from `https://cdn.ichibase.net/<project>/public/<path>`. See the
+[Storage docs](https://ichibase.com/docs/storage).
 
 ## Realtime
 
