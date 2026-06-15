@@ -1,0 +1,28 @@
+name: ichibase_example
+description: >-
+  A full-featured Flutter example app for the ichibase Dart SDK — Auth,
+  Postgres, MongoDB, Realtime, Storage (via Edge Functions) and Pro features.
+publish_to: "none"
+version: 1.0.0
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The SDK under test, pulled from the repo root via a path dependency.
+  ichibase:
+    path: ../
+
+  # Realistic session persistence + raw uploads to signed URLs.
+  shared_preferences: ^2.2.0
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

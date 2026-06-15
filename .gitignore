@@ -3,3 +3,7 @@
 build/
 pubspec.lock
 .DS_Store
+
+# Flutter generated
+.flutter-plugins
+.flutter-plugins-dependencies
