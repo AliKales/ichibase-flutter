@@ -59,8 +59,11 @@ class Auth {
     String? auth,
   }) async {
     final url = Uri.parse(urlJoin(_baseUrl, '/auth$path'));
+    // auth-svc requires the project (anon) key in the `apikey` header. The
+    // end-user's access token — only when acting as a user (e.g. /me, /logout) —
+    // goes in Authorization: Bearer.
     final res = await sendRequest(_http, method, url,
-        bearer: auth ?? _key, jsonBody: body);
+        bearer: auth, jsonBody: body, extraHeaders: {'apikey': _key});
     return toResponse<Map<String, dynamic>>(
         res, (b) => (b is Map ? b.cast<String, dynamic>() : <String, dynamic>{}));
   }
