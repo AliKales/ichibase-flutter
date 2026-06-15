@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// A live subscription. Call [unsubscribe] to stop; on a broadcast channel use
@@ -46,11 +47,13 @@ class RealtimeClient {
   bool _open = false;
   bool _connecting = false;
   bool _closedByUser = false;
+  bool _paused = false; // app backgrounded — socket closed, subs kept
   int _refSeq = 0;
   int _reconnectAttempts = 0;
   Timer? _heartbeat;
   final Map<String, _Sub> _subs = {};
   final List<String> _outbox = [];
+  AppLifecycleListener? _lifecycle;
 
   RealtimeClient(this._baseUrl, this._getToken);
 
@@ -68,6 +71,7 @@ class RealtimeClient {
     bool presence = false,
     Map<String, dynamic>? state,
   }) {
+    _attachLifecycle();
     final ref = 's${++_refSeq}';
     _subs[ref] = _Sub(ref, kind, onMessage,
         table: table,
@@ -104,6 +108,9 @@ class RealtimeClient {
   /// Close the socket and drop all subscriptions.
   void disconnect() {
     _closedByUser = true;
+    _paused = false;
+    _lifecycle?.dispose();
+    _lifecycle = null;
     _heartbeat?.cancel();
     _heartbeat = null;
     _open = false;
@@ -111,9 +118,55 @@ class RealtimeClient {
     _channel = null;
   }
 
+  /// Pause realtime: close the socket but KEEP subscriptions, and don't
+  /// auto-reconnect until [resume]. Called automatically when the app goes to
+  /// the background (see [_attachLifecycle]); also callable manually.
+  void pause() {
+    if (_paused) return;
+    _paused = true;
+    _heartbeat?.cancel();
+    _heartbeat = null;
+    _open = false;
+    _channel?.sink.close();
+    _channel = null;
+  }
+
+  /// Resume after [pause]: reconnect and re-subscribe if there are live subs.
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    _reconnectAttempts = 0;
+    if (!_closedByUser && _subs.isNotEmpty) _ensureConnected();
+  }
+
   // ── internals ──────────────────────────────────────────────────────
+  // Auto-pause realtime when the Flutter app is backgrounded and resume on
+  // foreground, so a phone-locked app doesn't burn a dead socket + battery.
+  // Best-effort: silently skipped if there's no Flutter binding (e.g. tests).
+  void _attachLifecycle() {
+    if (_lifecycle != null) return;
+    try {
+      _lifecycle = AppLifecycleListener(
+        onStateChange: (state) {
+          switch (state) {
+            case AppLifecycleState.resumed:
+              resume();
+            case AppLifecycleState.paused:
+            case AppLifecycleState.hidden:
+              pause();
+            case AppLifecycleState.inactive:
+            case AppLifecycleState.detached:
+              break;
+          }
+        },
+      );
+    } catch (_) {
+      // No WidgetsBinding (non-Flutter / pre-init) — manual pause()/resume().
+    }
+  }
+
   Future<void> _ensureConnected() async {
-    if (_channel != null || _connecting) return;
+    if (_channel != null || _connecting || _paused) return;
     _connecting = true;
     _closedByUser = false;
     final token = _getToken();
@@ -148,14 +201,14 @@ class RealtimeClient {
     _heartbeat?.cancel();
     _heartbeat = null;
     _channel = null;
-    if (!_closedByUser && _subs.isNotEmpty) _scheduleReconnect();
+    if (!_closedByUser && !_paused && _subs.isNotEmpty) _scheduleReconnect();
   }
 
   void _scheduleReconnect() {
     final delayMs = (1000 * (1 << _reconnectAttempts)).clamp(1000, 15000).toInt();
     _reconnectAttempts++;
     Timer(Duration(milliseconds: delayMs), () {
-      if (!_closedByUser && _subs.isNotEmpty) _ensureConnected();
+      if (!_closedByUser && !_paused && _subs.isNotEmpty) _ensureConnected();
     });
   }
 
