@@ -57,12 +57,20 @@ class PostgrestQueryBuilder implements Future<IchibaseResponse<dynamic>> {
 
   // ── verbs ──────────────────────────────────────────────────────────
   PostgrestQueryBuilder select([String columns = '*']) {
-    _method = 'GET';
+    // After a write (insert/update/upsert/delete) `.select()` asks for the
+    // affected row(s) back; on its own it's a plain read. Writes otherwise
+    // return nothing (return=minimal), so an RLS-protected table doesn't also
+    // need a SELECT policy just to insert.
+    if (_method != 'GET' && _method != 'HEAD') {
+      _returnRepresentation = true;
+    } else {
+      _method = 'GET';
+    }
     _filters.add('select=${Uri.encodeQueryComponent(columns)}');
     return this;
   }
 
-  PostgrestQueryBuilder insert(Object rows, {bool returning = true}) {
+  PostgrestQueryBuilder insert(Object rows, {bool returning = false}) {
     _method = 'POST';
     _body = rows;
     _returnRepresentation = returning;
@@ -70,7 +78,7 @@ class PostgrestQueryBuilder implements Future<IchibaseResponse<dynamic>> {
   }
 
   PostgrestQueryBuilder upsert(Object rows,
-      {String? onConflict, bool returning = true}) {
+      {String? onConflict, bool returning = false}) {
     _method = 'POST';
     _body = rows;
     _onConflict = onConflict;
@@ -80,14 +88,14 @@ class PostgrestQueryBuilder implements Future<IchibaseResponse<dynamic>> {
   }
 
   PostgrestQueryBuilder update(Map<String, dynamic> values,
-      {bool returning = true}) {
+      {bool returning = false}) {
     _method = 'PATCH';
     _body = values;
     _returnRepresentation = returning;
     return this;
   }
 
-  PostgrestQueryBuilder delete({bool returning = true}) {
+  PostgrestQueryBuilder delete({bool returning = false}) {
     _method = 'DELETE';
     _returnRepresentation = returning;
     return this;
@@ -170,8 +178,12 @@ class PostgrestQueryBuilder implements Future<IchibaseResponse<dynamic>> {
     final headers = <String, String>{..._extraHeaders};
     final prefer = <String>[];
     if (headers['Prefer'] != null) prefer.add(headers.remove('Prefer')!);
-    if (_returnRepresentation && _method != 'GET') {
-      prefer.add('return=representation');
+    final isWrite = _method != 'GET' && _method != 'HEAD';
+    // Writes return nothing unless the caller chained .select() (or passed
+    // returning: true) — be explicit so it doesn't depend on the PostgREST
+    // default, and so an RLS table needn't have a SELECT policy just to insert.
+    if (isWrite) {
+      prefer.add(_returnRepresentation ? 'return=representation' : 'return=minimal');
     }
     if (_countMode != null) prefer.add('count=$_countMode');
     if (prefer.isNotEmpty) headers['Prefer'] = prefer.join(',');
