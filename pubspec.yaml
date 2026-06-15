@@ -13,7 +13,8 @@ topics:
   - realtime
 
 environment:
-  sdk: ">=3.2.0 <4.0.0"
+  # >=3.4.0 because the default web session store uses package:web (^3.4.0).
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   http: ^1.2.0
