@@ -154,6 +154,57 @@ class Auth {
   Future<IchibaseResponse<Map<String, dynamic>>> resendVerification(String email) =>
       _call('/verify-email/resend', body: {'email': email});
 
+  // ── Passwordless login (OTP + magic link) ──────────────────────────
+  // Additive to email+password. The project must enable it (and configure
+  // custom SMTP). One email may carry an OTP code, a magic link, or both —
+  // whichever the project enabled.
+
+  /// Send the passwordless sign-in email. Always succeeds (202) even for
+  /// unknown emails — it never reveals whether an account exists; a new
+  /// email creates the account on first verify. Finish with [verifyOtp]
+  /// (the typed code) or [verifyMagicLink] (the token from the tapped link).
+  Future<IchibaseResponse<Map<String, dynamic>>> signInWithOtp({
+    required String email,
+  }) =>
+      _call('/login/passwordless/request', body: {'email': email});
+
+  /// Verify a passwordless OTP code and sign the user in. On success the
+  /// session is stored and subsequent data calls run as this user.
+  Future<IchibaseResponse<Session>> verifyOtp({
+    required String email,
+    required String code,
+  }) async {
+    final res = await _call('/login/passwordless/verify',
+        body: {'email': email, 'code': code});
+    return _finishLogin(res);
+  }
+
+  /// Redeem a magic-link token (the `token` query-param from the tapped
+  /// URL) and sign the user in. On success the session is stored.
+  Future<IchibaseResponse<Session>> verifyMagicLink(String token) async {
+    final res = await _call('/login/magic', body: {'token': token});
+    return _finishLogin(res);
+  }
+
+  /// Turn a token-pair response into a stored session (SIGNED_IN), or pass
+  /// the error through. Shared by the passwordless verify calls.
+  Future<IchibaseResponse<Session>> _finishLogin(
+    IchibaseResponse<Map<String, dynamic>> res,
+  ) async {
+    final d = res.data;
+    if (d != null && d['access_token'] != null) {
+      final s = Session(
+        accessToken: d['access_token'] as String,
+        refreshToken: d['refresh_token'] as String,
+        expiresAt: _expiresAt(d['expires_in']),
+        user: (d['user'] as Map?)?.cast<String, dynamic>(),
+      );
+      await _setSession(s, AuthEvent.signedIn);
+      return IchibaseResponse(data: s);
+    }
+    return IchibaseResponse(error: res.error);
+  }
+
   static int? _expiresAt(dynamic expiresIn) {
     if (expiresIn is! int) return null;
     return DateTime.now().millisecondsSinceEpoch ~/ 1000 + expiresIn;

@@ -72,6 +72,23 @@ ichi.onAuthStateChange.listen((s) {
 });
 ```
 
+### Passwordless sign-in (OTP & magic link)
+
+If the project enables it (custom SMTP required), users can sign in without a
+password — a one-time code, a magic link, or both in one email. Additive to
+email + password.
+
+```dart
+// 1. Send the sign-in email (always succeeds, even for unknown emails)
+await ichi.auth.signInWithOtp(email: email);
+
+// 2a. User typed the 6-digit code → signs them in (session is stored):
+await ichi.auth.verifyOtp(email: email, code: code);
+
+// 2b. …or exchange a magic-link token from your deep-link handler:
+await ichi.auth.verifyMagicLink(token);
+```
+
 ### Persisting the session
 
 The session lives in memory by default. Plug in a `SessionStore` to keep users

@@ -1,3 +1,10 @@
+## 0.3.0
+
+- Passwordless sign-in: `auth.signInWithOtp(email:)`, `auth.verifyOtp(email:, code:)`,
+  and `auth.verifyMagicLink(token)`. Additive to email + password; the project must
+  enable it (custom SMTP required). The two verify calls store the session and emit
+  `AuthEvent.signedIn`, exactly like `login`.
+
 ## 0.2.0
 
 - Automatic session persistence — no `store` needed. The SDK now picks a durable

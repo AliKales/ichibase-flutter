@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:ichibase/ichibase.dart';
 
@@ -16,7 +18,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   static const _table = 'posts';
 
   final _title = TextEditingController();
-  final _rpcName = TextEditingController(text: 'your_function');
+  // Defaults call `hello(name text)` — change to any function + JSON args.
+  final _rpcName = TextEditingController(text: 'hello');
+  final _rpcArgs = TextEditingController(text: '{"name": "World"}');
 
   List<Map<String, dynamic>> _rows = [];
   IchibaseResponse<dynamic>? _result;
@@ -28,6 +32,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   void dispose() {
     _title.dispose();
     _rpcName.dispose();
+    _rpcArgs.dispose();
     super.dispose();
   }
 
@@ -111,8 +116,18 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   Future<void> _rpc() async {
     final fn = _rpcName.text.trim();
     if (fn.isEmpty) return;
+    final raw = _rpcArgs.text.trim();
+    Map<String, dynamic> args;
+    try {
+      args = raw.isEmpty
+          ? const {}
+          : (jsonDecode(raw) as Map).cast<String, dynamic>();
+    } catch (_) {
+      _snack('Args must be a JSON object, e.g. {"name": "World"}.', error: true);
+      return;
+    }
     await _wrap(
-      () => _ichi.rpc(fn, args: const {'limit': 5}),
+      () => _ichi.rpc(fn, args: args),
       reloadAfter: false,
     );
   }
@@ -194,7 +209,19 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                   controller: _rpcName,
                   decoration: const InputDecoration(
                     labelText: 'Function name',
-                    helperText: 'Replace with one of your own functions.',
+                    helperText: 'e.g. hello — one of your own functions.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _rpcArgs,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Arguments (JSON object)',
+                    helperText: 'Keys = parameter names. e.g. {"name": "World"}',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -202,7 +229,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _rpc,
                   icon: const Icon(Icons.play_arrow),
-                  label: const Text("rpc(fn, args: {'limit': 5})"),
+                  label: const Text('rpc(fn, args)'),
                 ),
               ],
             ),
