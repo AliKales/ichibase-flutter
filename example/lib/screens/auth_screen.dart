@@ -26,6 +26,12 @@ class _AuthScreenState extends State<AuthScreen> {
   final _verifyToken = TextEditingController();
   final _resetEmail = TextEditingController();
 
+  // 2-step verification (after a password login when the project requires it).
+  final _twofaCode = TextEditingController();
+  final _twofaToken = TextEditingController();
+  bool _twofaPending = false;
+  List<String> _twofaMethods = const [];
+
   IchibaseResponse<dynamic>? _result;
   Map<String, dynamic>? _user;
   bool _busy = false;
@@ -37,6 +43,8 @@ class _AuthScreenState extends State<AuthScreen> {
     _otpCode.dispose();
     _verifyToken.dispose();
     _resetEmail.dispose();
+    _twofaCode.dispose();
+    _twofaToken.dispose();
     super.dispose();
   }
 
@@ -73,13 +81,62 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _login() async {
-    await _run(
-      () => _ichi.auth.login(
+    setState(() => _busy = true);
+    try {
+      final res = await _ichi.auth.login(
         email: _email.text.trim(),
         password: _password.text,
+      );
+      if (!mounted) return;
+      if (!res.ok) {
+        setState(() => _result = res);
+        _snack('${res.error?.code}: ${res.error?.detail}', error: true);
+      } else if (res.data?.twofaRequired == true) {
+        // The project requires 2-step verification: a code and/or magic link
+        // was emailed. Reveal the 2FA panel instead of treating this as a login.
+        setState(() {
+          _twofaPending = true;
+          _twofaMethods = res.data!.twofaMethods;
+          _result = IchibaseResponse<dynamic>(
+            data: {'twofa_required': true, 'methods': res.data!.twofaMethods},
+          );
+        });
+        _snack('2-step verification required — check your email.');
+      } else {
+        setState(() {
+          _twofaPending = false;
+          _result = IchibaseResponse<dynamic>(data: {
+            'logged_in': true,
+            'email': res.data?.session?.user?['email'],
+          });
+        });
+        _snack('Logged in.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Unexpected error: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _verifyTwoFactorCode() async {
+    await _run(
+      () => _ichi.auth.verifyTwoFactor(
+        email: _email.text.trim(),
+        code: _twofaCode.text.trim(),
       ),
-      successMessage: 'Logged in.',
+      successMessage: 'Logged in (2-step verified).',
     );
+    if (mounted && _ichi.session != null) setState(() => _twofaPending = false);
+  }
+
+  Future<void> _verifyTwoFactorMagic() async {
+    await _run(
+      () => _ichi.auth.verifyTwoFactorMagic(_twofaToken.text.trim()),
+      successMessage: 'Logged in (2-step verified).',
+    );
+    if (mounted && _ichi.session != null) setState(() => _twofaPending = false);
   }
 
   Future<void> _signup() async {
@@ -260,12 +317,54 @@ class _AuthScreenState extends State<AuthScreen> {
             const SizedBox(height: 8),
             Text(
               'On success the session is persisted automatically by the SDK '
-              'and every later data call runs AS this user.',
+              'and every later data call runs AS this user. If the project '
+              'requires 2-step verification, a code/link is emailed and the '
+              'panel below appears.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
       ),
+      if (_twofaPending)
+        SectionCard(
+          title: '2-step verification',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'A second factor was emailed (${_twofaMethods.join(', ')}). '
+                'Enter the code, or paste the token from the link.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _twofaCode,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '6-digit code (from the email)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: _busy ? null : _verifyTwoFactorCode,
+                child: const Text('Verify code'),
+              ),
+              const Divider(height: 28),
+              TextField(
+                controller: _twofaToken,
+                decoration: const InputDecoration(
+                  labelText: 'Token (from the magic link)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _busy ? null : _verifyTwoFactorMagic,
+                child: const Text('Verify with link token'),
+              ),
+            ],
+          ),
+        ),
       const InfoCard(
         icon: Icons.shield_outlined,
         title: 'Data runs as the user',
