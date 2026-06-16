@@ -4,6 +4,11 @@
   and `auth.verifyMagicLink(token)`. Additive to email + password; the project must
   enable it (custom SMTP required). The two verify calls store the session and emit
   `AuthEvent.signedIn`, exactly like `login`.
+- 2-step verification on password login: `auth.verifyTwoFactor(email:, code:)` and
+  `auth.verifyTwoFactorMagic(token)`. **`login` now returns
+  `IchibaseResponse<LoginResult>`** (was `<Session>`): `result.session` on a normal
+  login, or `result.twofaRequired == true` + `result.twofaMethods` when the project
+  requires 2-step verification (a factor was emailed). Custom SMTP required.
 
 ## 0.2.0
 

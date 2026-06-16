@@ -40,6 +40,21 @@ class Session {
 
 enum AuthEvent { signedIn, signedOut, tokenRefreshed }
 
+/// Result of [Auth.login]. Either [session] is set (normal login — already
+/// stored), or [twofaRequired] is true: the project requires 2-step
+/// verification, a code and/or magic link was emailed (see [twofaMethods]),
+/// and you finish with [Auth.verifyTwoFactor] / [Auth.verifyTwoFactorMagic].
+class LoginResult {
+  final Session? session;
+  final bool twofaRequired;
+  final List<String> twofaMethods;
+  const LoginResult({
+    this.session,
+    this.twofaRequired = false,
+    this.twofaMethods = const [],
+  });
+}
+
 /// Auth surface — signup/login plus session helpers. The [Ichibase] client
 /// owns the live session; this talks to `/auth/*` and reports changes back
 /// through the supplied callbacks.
@@ -75,15 +90,27 @@ class Auth {
   }) =>
       _call('/signup', body: {'email': email, 'password': password});
 
-  /// Log in. On success the session is stored and subsequent data calls run
-  /// as this user.
-  Future<IchibaseResponse<Session>> login({
+  /// Log in. Returns a [LoginResult]: normally `result.session` is set (and
+  /// stored, so subsequent data calls run as this user). When the project
+  /// requires 2-step verification, the password step instead yields
+  /// `result.twofaRequired == true` — a code and/or magic link was emailed;
+  /// finish with [verifyTwoFactor] or [verifyTwoFactorMagic].
+  Future<IchibaseResponse<LoginResult>> login({
     required String email,
     required String password,
   }) async {
     final res = await _call('/login', body: {'email': email, 'password': password});
     final d = res.data;
-    if (d != null && d['access_token'] != null) {
+    if (d == null) return IchibaseResponse(error: res.error);
+    if (d['twofa_required'] == true) {
+      return IchibaseResponse(
+        data: LoginResult(
+          twofaRequired: true,
+          twofaMethods: (d['methods'] as List?)?.cast<String>() ?? const <String>[],
+        ),
+      );
+    }
+    if (d['access_token'] != null) {
       final s = Session(
         accessToken: d['access_token'] as String,
         refreshToken: d['refresh_token'] as String,
@@ -91,7 +118,7 @@ class Auth {
         user: (d['user'] as Map?)?.cast<String, dynamic>(),
       );
       await _setSession(s, AuthEvent.signedIn);
-      return IchibaseResponse(data: s);
+      return IchibaseResponse(data: LoginResult(session: s));
     }
     return IchibaseResponse(error: res.error);
   }
@@ -183,6 +210,25 @@ class Auth {
   /// URL) and sign the user in. On success the session is stored.
   Future<IchibaseResponse<Session>> verifyMagicLink(String token) async {
     final res = await _call('/login/magic', body: {'token': token});
+    return _finishLogin(res);
+  }
+
+  // ── 2-step verification (second factor after a password login) ──────
+  // Call after [login] returns a result with twofaRequired == true.
+
+  /// Finish a 2-step login with the emailed code. Stores the session.
+  Future<IchibaseResponse<Session>> verifyTwoFactor({
+    required String email,
+    required String code,
+  }) async {
+    final res = await _call('/login/2fa/verify', body: {'email': email, 'code': code});
+    return _finishLogin(res);
+  }
+
+  /// Finish a 2-step login by redeeming a magic-link token (from the tapped
+  /// link). Stores the session.
+  Future<IchibaseResponse<Session>> verifyTwoFactorMagic(String token) async {
+    final res = await _call('/login/2fa/magic', body: {'token': token});
     return _finishLogin(res);
   }
 

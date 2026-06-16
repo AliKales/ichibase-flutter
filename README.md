@@ -89,6 +89,24 @@ await ichi.auth.verifyOtp(email: email, code: code);
 await ichi.auth.verifyMagicLink(token);
 ```
 
+### 2-step verification (login)
+
+If the project requires it (custom SMTP), `login` returns a **`LoginResult`**:
+normally `result.session` is set, but when 2-step verification is on the
+password step emails a factor and yields `result.twofaRequired == true`. Finish
+with `verifyTwoFactor` (the code) or `verifyTwoFactorMagic` (the token).
+
+```dart
+final res = await ichi.auth.login(email: email, password: password);
+if (res.data?.twofaRequired == true) {
+  // a code / link was emailed (res.data!.twofaMethods) — prompt, then:
+  await ichi.auth.verifyTwoFactor(email: email, code: code);
+  // or: await ichi.auth.verifyTwoFactorMagic(token);
+} else {
+  final session = res.data?.session; // normal login
+}
+```
+
 ### Persisting the session
 
 The session lives in memory by default. Plug in a `SessionStore` to keep users
