@@ -98,11 +98,16 @@ class _StorageScreenState extends State<StorageScreen> {
   Future<void> _upload() async {
     setState(() => _busy = true);
     try {
+      // Generate the bytes FIRST: get-put-url binds the signed URL to the exact
+      // content length, so the EF needs the size before it can sign. No file
+      // picker — generate bytes in-app so the example stays plugin-free.
+      final bytes = utf8.encode('hello from ichibase @ ${DateTime.now()}');
       final res = await _ichi.functions.invoke('files', body: {
         'op': 'put',
         'bucket': _upBucket.text.trim(),
         'path': _upPath.text.trim(),
         'content_type': 'text/plain',
+        'content_length': bytes.length,
       });
       if (!mounted) return;
       setState(() => _result = res);
@@ -115,11 +120,10 @@ class _StorageScreenState extends State<StorageScreen> {
         _snack('Function returned no signed PUT url.', error: true);
         return;
       }
-      // No file picker — generate bytes in-app so the example stays plugin-free.
-      final bytes = utf8.encode('hello from ichibase @ ${DateTime.now()}');
+      // Must match the signed content length exactly, or R2 rejects the PUT.
       final put = await http.put(
         Uri.parse(putUrl),
-        headers: const {'Content-Type': 'text/plain'},
+        headers: {'Content-Type': 'text/plain', 'Content-Length': '${bytes.length}'},
         body: bytes,
       );
       if (!mounted) return;

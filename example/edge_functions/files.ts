@@ -20,6 +20,10 @@ interface FilesRequest {
   bucket?: string;
   path?: string;
   content_type?: string;
+  // Required for `put`: the exact byte length of the body you're about to
+  // upload. The signed PUT URL binds to this size, so the client must then send
+  // exactly this many bytes (with a matching Content-Length header).
+  content_length?: number;
   // For folder reads: sign every object under `path`.
   recursive?: boolean;
 }
@@ -74,7 +78,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ code: "bad_request", detail: "invalid JSON body" }, 400);
   }
 
-  const { op = "get", bucket, path, content_type, recursive } = body;
+  const { op = "get", bucket, path, content_type, content_length, recursive } = body;
   if (!bucket || !path) {
     return json({ code: "bad_request", detail: "bucket and path required" }, 400);
   }
@@ -93,10 +97,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     case "put":
       // Returns { url } — a signed PUT url the client uploads bytes to.
+      // get-put-url REQUIRES content_length (it binds the signed URL to the
+      // exact size + meters it against your storage quota up front).
+      if (typeof content_length !== "number" || content_length < 1) {
+        return json(
+          { code: "bad_request", detail: "content_length (bytes, >= 1) required for put" },
+          400,
+        );
+      }
       return callStorage("get-put-url", {
         bucket,
         path,
         content_type: content_type ?? "application/octet-stream",
+        content_length,
       });
 
     case "delete":
