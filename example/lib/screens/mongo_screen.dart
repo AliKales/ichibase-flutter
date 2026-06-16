@@ -67,13 +67,15 @@ class _MongoScreenState extends State<MongoScreen> {
     }
   }
 
-  /// Mongo responses can be a bare List or `{documents: [...]}` / `{rows: ...}`.
+  /// `find` returns `{ count, docs: [...] }`; tolerate a bare List or other
+  /// common envelope keys too.
   List<Map<String, dynamic>> _extractDocs(dynamic data) {
     List? list;
     if (data is List) {
       list = data;
     } else if (data is Map) {
-      list = (data['documents'] ?? data['rows'] ?? data['data']) as List?;
+      list = (data['docs'] ?? data['documents'] ?? data['rows'] ?? data['data'])
+          as List?;
     }
     return (list ?? const [])
         .whereType<Map>()
