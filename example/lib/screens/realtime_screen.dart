@@ -18,6 +18,9 @@ class RealtimeScreen extends StatefulWidget {
 class _RealtimeScreenState extends State<RealtimeScreen> {
   Subscription? _sub;
   final List<_Event> _events = [];
+  bool _busy = false;
+  // _id of the last inserted test doc, so update/delete can target it.
+  dynamic _lastId;
 
   bool get _isMongo => AppConfig.current!.flavor == DbFlavor.mongo;
 
@@ -35,7 +38,12 @@ class _RealtimeScreenState extends State<RealtimeScreen> {
       kind: mongo ? 'mongo' : 'postgres',
       table: mongo ? null : 'posts',
       collection: mongo ? 'orders' : null,
-      events: const ['INSERT', 'UPDATE', 'DELETE'],
+      // Event names are case-sensitive on the wire: Mongo emits lowercase
+      // (insert/update/delete), Postgres uppercase (INSERT/UPDATE/DELETE).
+      // Passing the wrong case here silently filters out every event.
+      events: mongo
+          ? const ['insert', 'update', 'delete']
+          : const ['INSERT', 'UPDATE', 'DELETE'],
       onMessage: _onMessage,
     );
     setState(() => _sub = sub);
@@ -46,6 +54,79 @@ class _RealtimeScreenState extends State<RealtimeScreen> {
     _sub?.unsubscribe();
     setState(() => _sub = null);
     _snack('Unsubscribed.');
+  }
+
+  /// Insert a test record from THIS screen while subscribed, so the event
+  /// arrives here. Navigating to another screen to make a change would
+  /// dispose this screen and close the subscription first.
+  Future<void> _trigger() async {
+    setState(() => _busy = true);
+    try {
+      final ichi = Ichibase.instance;
+      final res = _isMongo
+          ? await ichi.mongo
+              .collection('orders')
+              .insertOne({'item': 'rt-test', 'total': 1})
+          : await ichi.from('posts').insert(
+              {'title': 'rt-${DateTime.now().millisecondsSinceEpoch}'},
+            );
+      if (!mounted) return;
+      if (res.ok && _isMongo) {
+        final d = res.data;
+        _lastId = d is Map ? (d['_id'] ?? d['insertedId']) : null;
+      }
+      _snack(res.ok
+          ? 'Inserted — watch for an event, then try update / delete.'
+          : '${res.error?.code}: ${res.error?.detail}');
+    } catch (e) {
+      if (mounted) _snack('Insert failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Update ($inc) / delete the last inserted doc, so all three Mongo event
+  /// types can be seen from this screen without leaving it.
+  Future<void> _bumpLast() async {
+    if (_lastId == null) return;
+    setState(() => _busy = true);
+    try {
+      final res = await Ichibase.instance.mongo.collection('orders').updateOne(
+        {'_id': _lastId},
+        {
+          r'$inc': {'total': 1},
+        },
+      );
+      if (mounted) {
+        _snack(res.ok
+            ? 'Updated — watch for an event.'
+            : '${res.error?.code}: ${res.error?.detail}');
+      }
+    } catch (e) {
+      if (mounted) _snack('Update failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteLast() async {
+    if (_lastId == null) return;
+    setState(() => _busy = true);
+    try {
+      final res = await Ichibase.instance.mongo
+          .collection('orders')
+          .deleteOne({'_id': _lastId});
+      if (mounted) {
+        if (res.ok) _lastId = null;
+        _snack(res.ok
+            ? 'Deleted — watch for an event.'
+            : '${res.error?.code}: ${res.error?.detail}');
+      }
+    } catch (e) {
+      if (mounted) _snack('Delete failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _onMessage(Map<String, dynamic> m) {
@@ -115,6 +196,38 @@ class _RealtimeScreenState extends State<RealtimeScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: (running && !_busy) ? _trigger : null,
+                  icon: const Icon(Icons.add),
+                  label: Text(_isMongo ? 'insertOne test doc' : 'insert test row'),
+                ),
+                if (_isMongo) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: (running && !_busy && _lastId != null)
+                              ? _bumpLast
+                              : null,
+                          icon: const Icon(Icons.exposure_plus_1),
+                          label: const Text('updateOne'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: (running && !_busy && _lastId != null)
+                              ? _deleteLast
+                              : null,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('deleteOne'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -123,9 +236,9 @@ class _RealtimeScreenState extends State<RealtimeScreen> {
             title: 'Events (${_events.length})',
             child: _events.isEmpty
                 ? Text(
-                    'No events yet. With a subscription running, change a row '
-                    'from the ${_isMongo ? 'MongoDB' : 'Database'} screen (or '
-                    'the dashboard) and watch them arrive.',
+                    'No events yet. Start a subscription, then tap '
+                    '"${_isMongo ? 'insertOne test doc' : 'insert test row'}" '
+                    'above to generate one without leaving this screen.',
                     style: Theme.of(context).textTheme.bodySmall,
                   )
                 : Column(
