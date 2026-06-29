@@ -5,19 +5,20 @@ on:
   pull_request:
 
 jobs:
-  # The package itself is pure Dart (no Flutter dep). Resolve + analyze + test
-  # it under plain Dart. The `example/` is a separate Flutter app — `dart pub
-  # get` at the root would try to resolve it and fail (it needs the Flutter
-  # SDK), so remove it first; this also proves the package stays Flutter-free.
+  # The package depends on the Flutter SDK (pubspec: flutter from sdk), so
+  # resolve + analyze + test it under Flutter. (`dart pub get` here fails:
+  # "depends on flutter from sdk".) The `example/` is a separate package with
+  # its own pubspec and isn't part of the root resolution.
   package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
-      - run: rm -rf example
-      - run: dart pub get
-      - run: dart analyze
-      - run: dart test
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
 
   # The example is a Flutter app — analyze it with the Flutter toolchain.
   example:
