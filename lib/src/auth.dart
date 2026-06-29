@@ -213,6 +213,25 @@ class Auth {
     return _finishLogin(res);
   }
 
+  /// Send a one-time login code by SMS (paid plans). [phone] must be E.164,
+  /// e.g. `+14155551234`. A new number creates the account on first verify;
+  /// finish with [verifyPhoneOtp]. Subject to owner-configured rate limits.
+  Future<IchibaseResponse<Map<String, dynamic>>> signInWithPhone({
+    required String phone,
+  }) =>
+      _call('/login/phone/request', body: {'phone': phone});
+
+  /// Verify a phone OTP code and sign the user in. On success the session is
+  /// stored and subsequent data calls run as this user.
+  Future<IchibaseResponse<Session>> verifyPhoneOtp({
+    required String phone,
+    required String code,
+  }) async {
+    final res =
+        await _call('/login/phone/verify', body: {'phone': phone, 'code': code});
+    return _finishLogin(res);
+  }
+
   /// Redeem a magic-link token (the `token` query-param from the tapped
   /// URL) and sign the user in. On success the session is stored.
   Future<IchibaseResponse<Session>> verifyMagicLink(String token) async {
